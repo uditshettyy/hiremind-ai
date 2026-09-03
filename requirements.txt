@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+sqlalchemy
+psycopg2-binary
+pgvector
+python-dotenv
+python-multipart
+
+# Fill in as each module needs them, e.g.:
+# langchain
+# langgraph
+# openai / anthropic
+# websockets
+# pytest
+# httpx
