@@ -1,4 +1,4 @@
-# AI Career Intelligence & Interview Agent
+# HIREMIND-AI
 
 Multi-agent system for resume/JD analysis, skill-gap detection, and RAG-grounded
 agentic interview practice.
