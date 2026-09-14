@@ -1,17 +1,33 @@
+# --- Core web framework ---
 fastapi
 uvicorn[standard]
 pydantic
 pydantic-settings
-sqlalchemy
-psycopg2-binary
-pgvector
 python-dotenv
 python-multipart
 
-# Fill in as each module needs them, e.g.:
-# langchain
-# langgraph
-# openai / anthropic
-# websockets
-# pytest
-# httpx
+# --- Database (async engine, per app/core/database.py) ---
+sqlalchemy[asyncio]     # [asyncio] extra pulls in greenlet, required for the async engine
+asyncpg                 # async Postgres driver — the app's actual runtime driver
+psycopg2-binary         # sync driver, kept for Alembic migrations
+pgvector
+alembic
+
+# --- LLM client (app/utils/llm_client.py, app/utils/vector_store.py) ---
+openai                  # default provider per app/config.py — required now, not optional
+mistralai
+groq
+# --- Document parsing (app/agents/intake/parser.py) ---
+PyMuPDF
+python-docx
+
+# --- Testing (needed once you write tests/unit/test_intake.py) ---
+pytest
+pytest-asyncio
+httpx
+
+# Fill in as Module 2 needs them:
+langchain
+langgraph
+anthropic
+websockets
