@@ -1,0 +1,139 @@
+{
+  "questions": [
+    {
+      "question_text": "Design a URL shortener like Bitly. How would you handle 10M writes/day, prevent collisions, and ensure low-latency reads?",
+      "category": "technical",
+      "question_type": "technical",
+      "difficulty": "hard",
+      "target_skills": ["system-design", "distributed-systems", "databases"],
+      "expected_bullet_points": ["Hashing strategy (base62)", "Database choice (NoSQL vs SQL)", "Cache layer", "Collision handling"],
+      "max_duration_seconds": 300
+    },
+    {
+      "question_text": "Explain Python's GIL. When is it a bottleneck and how do you work around it for CPU-bound tasks?",
+      "category": "technical",
+      "question_type": "technical",
+      "difficulty": "medium",
+      "target_skills": ["python", "concurrency", "multithreading"],
+      "expected_bullet_points": ["What GIL is and why it exists", "CPU-bound vs I/O-bound", "multiprocessing, C extensions, asyncio"],
+      "max_duration_seconds": 180
+    },
+    {
+      "question_text": "You need to migrate a monolithic e-commerce app to microservices. Walk me through your strategy for the 'Order' service.",
+      "category": "technical",
+      "question_type": "situational",
+      "difficulty": "hard",
+      "target_skills": ["microservices", "system-design", "refactoring"],
+      "expected_bullet_points": ["Strangler Fig pattern", "Data ownership & bounded contexts", "Event-driven communication", "Rollback plan"],
+      "max_duration_seconds": 300
+    },
+    {
+      "question_text": "Write a SQL query to find the second-highest salary in each department, handling ties correctly.",
+      "category": "technical",
+      "question_type": "technical",
+      "difficulty": "medium",
+      "target_skills": ["sql", "databases"],
+      "expected_bullet_points": ["Window functions (DENSE_RANK)", "Subquery approach", "Edge case: departments with <2 employees"],
+      "max_duration_seconds": 180
+    },
+    {
+      "question_text": "Tell me about a time you had to deliver critical feedback to a peer or senior engineer. How did you approach it and what was the outcome?",
+      "category": "behavioral",
+      "question_type": "behavioral",
+      "difficulty": "medium",
+      "target_skills": ["communication", "leadership", "emotional-intelligence"],
+      "expected_bullet_points": ["Situation context", "Specific feedback framework (SBI)", "Outcome and relationship impact"],
+      "max_duration_seconds": 180
+    },
+    {
+      "question_text": "Describe a project that failed or missed its deadline. What was your role, what went wrong, and what did you learn?",
+      "category": "behavioral",
+      "question_type": "behavioral",
+      "difficulty": "medium",
+      "target_skills": ["accountability", "growth-mindset", "project-management"],
+      "expected_bullet_points": ["Honest ownership of mistakes", "Root cause analysis", "Concrete changes implemented afterward"],
+      "max_duration_seconds": 180
+    },
+    {
+      "question_text": "Your team disagrees on whether to build a feature in-house or buy a third-party solution. You're the tie-breaker. How do you decide?",
+      "category": "behavioral",
+      "question_type": "situational",
+      "difficulty": "hard",
+      "target_skills": ["decision-making", "stakeholder-management", "product-sense"],
+      "expected_bullet_points": ["Decision matrix (cost, time, maintenance, risk)", "Consulting stakeholders", "Documenting trade-offs"],
+      "max_duration_seconds": 240
+    },
+    {
+      "question_text": "How do you prioritize when you have three urgent tasks assigned by different managers with conflicting deadlines?",
+      "category": "behavioral",
+      "question_type": "behavioral",
+      "difficulty": "easy",
+      "target_skills": ["time-management", "communication", "prioritization"],
+      "expected_bullet_points": ["Impact/effort assessment", "Escalation and transparency", "Negotiating deadlines"],
+      "max_duration_seconds": 120
+    },
+    {
+      "question_text": "Walk me through a system you built that had to scale from 1K to 1M users. What broke first and how did you fix it?",
+      "category": "project-deep-dive",
+      "question_type": "technical",
+      "difficulty": "hard",
+      "target_skills": ["scaling", "system-design", "performance-optimization"],
+      "expected_bullet_points": ["Bottleneck identification", "Database scaling (read replicas, sharding)", "Caching strategy", "Monitoring"],
+      "max_duration_seconds": 300
+    },
+    {
+      "question_text": "Describe a complex bug that took days to debug. What was your systematic approach to isolating the root cause?",
+      "category": "project-deep-dive",
+      "question_type": "technical",
+      "difficulty": "medium",
+      "target_skills": ["debugging", "problem-solving", "observability"],
+      "expected_bullet_points": ["Reproduction steps", "Binary search / bisecting commits", "Logging and tracing", "Fix validation"],
+      "max_duration_seconds": 240
+    },
+    {
+      "question_text": "You led a migration from REST to GraphQL. What were the biggest technical and organizational challenges?",
+      "category": "project-deep-dive",
+      "question_type": "situational",
+      "difficulty": "hard",
+      "target_skills": ["api-design", "graphql", "refactoring", "team-leadership"],
+      "expected_bullet_points": ["N+1 problem and DataLoader", "Schema versioning", "Developer adoption & training", "Performance monitoring"],
+      "max_duration_seconds": 300
+    },
+    {
+      "question_text": "Tell me about an architecture decision you made that you later regretted. What would you do differently now?",
+      "category": "project-deep-dive",
+      "question_type": "behavioral",
+      "difficulty": "medium",
+      "target_skills": ["architecture", "decision-making", "self-awareness"],
+      "expected_bullet_points": ["Context at the time of decision", "What changed (scale, requirements)", "Lesson applied to later projects"],
+      "max_duration_seconds": 180
+    },
+    {
+      "question_text": "Given an array of integers, return indices of the two numbers such that they add up to a specific target. Assume each input has exactly one solution.",
+      "category": "dsa",
+      "question_type": "technical",
+      "difficulty": "easy",
+      "target_skills": ["arrays", "hash-map", "dsa"],
+      "expected_bullet_points": ["Brute force O(n²) approach", "Hash map O(n) approach", "Space-time tradeoff"],
+      "max_duration_seconds": 120
+    },
+    {
+      "question_text": "Design an LRU (Least Recently Used) cache with O(1) get and put operations. What data structures do you use?",
+      "category": "dsa",
+      "question_type": "technical",
+      "difficulty": "medium",
+      "target_skills": ["hash-map", "linked-list", "dsa", "cache-design"],
+      "expected_bullet_points": ["HashMap + Doubly Linked List", "Handling eviction", "Thread-safety considerations"],
+      "max_duration_seconds": 180
+    },
+    {
+      "question_text": "Given a collection of intervals, merge all overlapping intervals. Example: [[1,3],[2,6],[8,10],[15,18]] → [[1,6],[8,10],[15,18]].",
+      "category": "dsa",
+      "question_type": "technical",
+      "difficulty": "medium",
+      "target_skills": ["arrays", "sorting", "dsa", "intervals"],
+      "expected_bullet_points": ["Sort by start time O(n log n)", "Iterate and merge", "Edge cases: empty input, fully contained intervals"],
+      "max_duration_seconds": 180
+    }
+  ]
+}
