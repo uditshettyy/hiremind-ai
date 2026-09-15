@@ -29,3 +29,11 @@ Thumbs.db
 # One-off local DB setup scripts (not part of the module)
 create_tables.py
 fix_table.py
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
