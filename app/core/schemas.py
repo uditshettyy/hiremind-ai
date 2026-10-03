@@ -155,3 +155,99 @@ class QuestionBankSearchResult(BaseModel):
 class QuestionBankBatch(BaseModel):
     """Input shape for the ingestion script."""
     questions: List[QuestionBankItem]
+    
+class TurnStatus(str, Enum):
+    PENDING = "pending"
+    ANSWERED = "answered"
+    EVALUATED = "evaluated"
+    FOLLOW_UP = "follow_up"
+    SKIPPED = "skipped"
+
+
+class InterviewTurn(BaseModel):
+    """A single Q-A-evaluation cycle."""
+    turn_number: int
+    question: Question
+    answer_text: Optional[str] = None
+    answer_audio_url: Optional[str] = None
+    answer_started_at: Optional[datetime] = None
+    answer_submitted_at: Optional[datetime] = None
+    status: TurnStatus = TurnStatus.PENDING
+    evaluation: Optional["AnswerEvaluation"] = None
+    follow_up_turns: List["InterviewTurn"] = Field(default_factory=list)
+
+
+class SessionStatus(str, Enum):
+    CREATED = "created"
+    IN_PROGRESS = "in_progress"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+
+
+class InterviewSession(BaseModel):
+    """Top-level LangGraph state object."""
+    session_id: str = Field(..., description="UUIDv4")
+    candidate_id: str
+    job_id: str
+    skill_gap_report_id: str
+    status: SessionStatus
+    current_turn_number: int = 0
+    turns: List[InterviewTurn] = Field(default_factory=list)
+    question_set: QuestionSet
+    session_started_at: datetime
+    session_ended_at: Optional[datetime] = None
+    config: dict = Field(
+        default_factory=lambda: {
+            "max_turns": 12,
+            "allow_follow_ups": True,
+        }
+    )
+
+    @property
+    def completed_turns(self) -> List[InterviewTurn]:
+        return [
+            turn
+            for turn in self.turns
+            if turn.status == TurnStatus.EVALUATED
+        ]
+
+
+class ScoreDimension(str, Enum):
+    ACCURACY = "accuracy"
+    DEPTH = "depth"
+    CLARITY = "clarity"
+    RELEVANCE = "relevance"
+    CONFIDENCE = "confidence"
+
+
+class DimensionScore(BaseModel):
+    dimension: ScoreDimension
+    score: float = Field(..., ge=0.0, le=10.0)
+    rationale: str = Field(..., max_length=500)
+
+
+class AnswerEvaluation(BaseModel):
+    """Evaluation returned by the Evaluation Agent."""
+    evaluation_id: str = Field(..., description="UUIDv4")
+    session_id: str
+    turn_number: int
+    candidate_id: str
+    evaluated_at: datetime
+
+    dimension_scores: List[DimensionScore]
+    overall_score: float = Field(..., ge=0.0, le=10.0)
+    weighted_score: float = Field(..., ge=0.0, le=10.0)
+
+    summary_feedback: str = Field(..., max_length=2000)
+    strengths: List[str] = Field(default_factory=list, max_length=5)
+    improvements: List[str] = Field(default_factory=list, max_length=5)
+    model_answer_snippet: Optional[str] = None
+
+    routing_hint: str
+    suggested_follow_up: Optional[str] = None
+
+    skill_level_inferred: Optional[ProficiencyLevel] = None
+
+    evaluator_version: str = "1.0.0"
+    latency_ms: int
