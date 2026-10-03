@@ -127,51 +127,122 @@ async def build_question_set_from_gaps(
 ) -> QuestionSet:
     """
     Main entrypoint called by the LangGraph INIT node.
-    Given a SkillGapReport, return a curated QuestionSet ordered by gap severity.
+
+    Given a SkillGapReport, build a personalized QuestionSet that:
+    1. Prioritizes technical questions based on skill gaps.
+    2. Includes project deep-dive questions when space is available.
+    3. Includes behavioral questions when space is available.
+    4. Uses the existing pgvector RAG retrieval for all questions.
     """
+
     questions: List[Question] = []
     seen_ids = set()
 
-    # Priority 1: Target the top_gaps (highest severity first)
-    for gap in gap_report.top_gaps:
-        topic = gap.skill_name  # e.g. "system-design", "python"
-        results = await retrieve_questions_for_gap(
-            db=db,
-            openai_client=openai_client,
-            skill_topic=topic,
-            top_k=top_k_per_gap,
-            # Optional: you can filter by difficulty based on gap.gap_level
-            # difficulty_filter="hard" if gap.gap_severity >= 4 else "medium",
+    def add_question(
+        result: QuestionBankSearchResult,
+        target_skill: str,
+        difficulty: Optional[Difficulty] = None,
+    ) -> None:
+        if result.question.id in seen_ids:
+            return
+
+        seen_ids.add(result.question.id)
+
+        questions.append(
+            Question(
+                question_id=str(uuid.uuid4()),
+                question_text=result.question.question_text,
+                question_type=result.question.question_type,
+                target_skill=target_skill,
+                target_skill_gap_id=None,
+                difficulty=difficulty or result.question.difficulty,
+                expected_bullet_points=result.question.expected_bullet_points,
+                max_duration_seconds=result.question.max_duration_seconds,
+                source_chunks=[str(result.question.id)],
+            )
         )
 
-        for r in results:
-            if r.question.id in seen_ids:
-                continue
-            seen_ids.add(r.question.id)
-
-            questions.append(
-                Question(
-                    question_id=str(uuid.uuid4()),
-                    question_text=r.question.question_text,
-                    question_type=r.question.question_type,
-                    target_skill=topic,
-                    target_skill_gap_id=None,  # populated later if you link to gap UUID
-                    difficulty=r.question.difficulty,
-                    expected_bullet_points=r.question.expected_bullet_points,
-                    max_duration_seconds=r.question.max_duration_seconds,
-                    source_chunks=[str(r.question.id)],  # audit trail: which bank item
-                )
-            )
-
-            if len(questions) >= max_total_questions:
-                break
-
+    # ---------------------------------------------------------------
+    # Priority 1: Technical questions based on skill gaps
+    # ---------------------------------------------------------------
+    for gap in gap_report.top_gaps:
         if len(questions) >= max_total_questions:
             break
 
-    # Priority 2: If we have room, add strength-reinforcement questions
-    # (softball questions on things they already know well — builds confidence)
+        results = await retrieve_questions_for_gap(
+            db=db,
+            openai_client=openai_client,
+            skill_topic=gap.skill_name,
+            top_k=top_k_per_gap,
+        )
+
+        for result in results:
+            if len(questions) >= max_total_questions:
+                break
+
+            # Technical gap questions are the primary personalized
+            # questions. Other categories retrieved by similarity are
+            # still allowed here.
+            add_question(
+                result=result,
+                target_skill=gap.skill_name,
+            )
+
+    # ---------------------------------------------------------------
+    # Priority 2: Ensure project deep-dive coverage
+    # ---------------------------------------------------------------
+    if len(questions) < max_total_questions and gap_report.top_gaps:
+        target_skill = gap_report.top_gaps[0].skill_name
+
+        results = await retrieve_questions_for_gap(
+            db=db,
+            openai_client=openai_client,
+            skill_topic=target_skill,
+            top_k=2,
+            category_filter="project-deep-dive",
+        )
+
+        for result in results:
+            if len(questions) >= max_total_questions:
+                break
+
+            add_question(
+                result=result,
+                target_skill=target_skill,
+            )
+
+    # ---------------------------------------------------------------
+    # Priority 3: Ensure behavioral coverage
+    # ---------------------------------------------------------------
+    if len(questions) < max_total_questions:
+        target_skill = (
+            gap_report.top_gaps[0].skill_name
+            if gap_report.top_gaps
+            else "general"
+        )
+
+        results = await retrieve_questions_for_gap(
+            db=db,
+            openai_client=openai_client,
+            skill_topic=target_skill,
+            top_k=2,
+            category_filter="behavioral",
+        )
+
+        for result in results:
+            if len(questions) >= max_total_questions:
+                break
+
+            add_question(
+                result=result,
+                target_skill=target_skill,
+            )
+
+    # ---------------------------------------------------------------
+    # Priority 4: Strength-reinforcement questions
+    # ---------------------------------------------------------------
     remaining = max_total_questions - len(questions)
+
     if remaining > 0:
         for strength in gap_report.strengths[:remaining]:
             results = await retrieve_questions_for_gap(
@@ -180,27 +251,25 @@ async def build_question_set_from_gaps(
                 skill_topic=strength.skill_name,
                 top_k=1,
             )
-            for r in results:
-                if r.question.id not in seen_ids:
-                    seen_ids.add(r.question.id)
-                    questions.append(
-                        Question(
-                            question_id=str(uuid.uuid4()),
-                            question_text=r.question.question_text,
-                            question_type=QuestionType.BEHAVIORAL
-                            if r.question.category == "behavioral"
-                            else QuestionType.TECHNICAL,
-                            target_skill=strength.skill_name,
-                            difficulty=Difficulty.EASY,  # strengths get easier questions
-                            expected_bullet_points=r.question.expected_bullet_points,
-                            source_chunks=[str(r.question.id)],
-                        )
-                    )
+
+            for result in results:
+                if len(questions) >= max_total_questions:
                     break
+
+                if result.question.id in seen_ids:
+                    continue
+
+                add_question(
+                    result=result,
+                    target_skill=strength.skill_name,
+                    difficulty=Difficulty.EASY,
+                )
+
+                break
 
     return QuestionSet(
         set_id=str(uuid.uuid4()),
-        session_id="",  # populated by caller (graph.py)
+        session_id="",
         questions=questions,
         created_at=datetime.utcnow(),
     )
