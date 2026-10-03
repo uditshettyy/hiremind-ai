@@ -9,8 +9,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
+import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProficiencyLevel(str, Enum):
@@ -24,7 +25,7 @@ class ProficiencyLevel(str, Enum):
 
 # Ordinal weight for severity/score math — not in ARCHITECTURE.md's listing,
 # but it's a property of the scale itself, so it lives next to the enum.
-PROFICIENCY_ORDINAL = {
+PROFICIENCY_ORDINAL: dict[ProficiencyLevel, int] = {
     ProficiencyLevel.ABSENT: 1,
     ProficiencyLevel.NOVICE: 2,
     ProficiencyLevel.COMPETENT: 3,
@@ -77,26 +78,36 @@ class SkillGapReport(BaseModel):
     @property
     def primary_gap_skills(self) -> List[str]:
         return [g.skill_name for g in self.top_gaps[:5]]
-# app/core/schemas.py
-from pydantic import BaseModel, Field
-from typing import List, Optional
-from datetime import datetime
-import uuid
 
-from enum import Enum
+    def find_skill(self, skill_name: str) -> Optional[SkillGap]:
+        """Find a skill gap or strength entry by canonical skill_name (case-insensitive)."""
+        norm = skill_name.strip().lower()
+        for g in self.top_gaps + self.strengths:
+            if g.skill_name.strip().lower() == norm:
+                return g
+        return None
+
 
 class QuestionType(str, Enum):
     TECHNICAL = "technical"
     BEHAVIORAL = "behavioral"
     SITUATIONAL = "situational"
-    FOLLOW_UP = "follow_up"
-    CLARIFYING = "clarifying"
+    FOLLOW_UP = "follow_up"      # Generated dynamically during the loop
+    CLARIFYING = "clarifying"    # When the model needs more info
 
 
 class Difficulty(str, Enum):
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
+
+
+# Used by scorer.py to weight overall_score -> weighted_score by question difficulty
+DIFFICULTY_WEIGHT: dict[Difficulty, float] = {
+    Difficulty.EASY: 0.85,
+    Difficulty.MEDIUM: 1.0,
+    Difficulty.HARD: 1.15,
+}
 
 
 class Question(BaseModel):
@@ -128,7 +139,6 @@ class QuestionSet(BaseModel):
     created_at: datetime
 
 
-
 class QuestionBankItem(BaseModel):
     """A single curated question from the vector store."""
     id: Optional[uuid.UUID] = None
@@ -142,8 +152,7 @@ class QuestionBankItem(BaseModel):
     metadata: dict = Field(default_factory=dict)
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True  # SQLAlchemy → Pydantic
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QuestionBankSearchResult(BaseModel):
@@ -155,6 +164,63 @@ class QuestionBankSearchResult(BaseModel):
 class QuestionBankBatch(BaseModel):
     """Input shape for the ingestion script."""
     questions: List[QuestionBankItem]
+
+
+# ---------------------------------------------------------------------------
+# Module 2 & 3: Turn and Evaluation Models
+# ---------------------------------------------------------------------------
+
+class TurnStatus(str, Enum):
+    PENDING = "pending"        # Question asked, awaiting answer
+    ANSWERED = "answered"      # Answer received, awaiting evaluation
+    EVALUATED = "evaluated"    # Evaluation complete
+    FOLLOW_UP = "follow_up"    # A follow-up was asked
+    SKIPPED = "skipped"        # Question skipped (time/choice)
+
+
+class ScoreDimension(str, Enum):
+    ACCURACY = "accuracy"        # Factually correct?
+    DEPTH = "depth"              # Nuanced understanding?
+    CLARITY = "clarity"          # Well-structured communication?
+    RELEVANCE = "relevance"      # Addresses the question asked?
+    CONFIDENCE = "confidence"    # Tone / delivery (text proxy)
+
+
+class DimensionScore(BaseModel):
+    dimension: ScoreDimension
+    score: float = Field(..., ge=0.0, le=10.0)
+    rationale: str = Field(..., max_length=500)
+
+
+class AnswerEvaluation(BaseModel):
+    """The atomic evaluation returned by Module 3 for a single answer (Handoff #3)."""
+    evaluation_id: str = Field(..., description="UUIDv4")
+    session_id: str
+    turn_number: int
+    candidate_id: str
+    evaluated_at: datetime
+
+    dimension_scores: List[DimensionScore]
+    overall_score: float = Field(..., ge=0.0, le=10.0)
+    weighted_score: float = Field(..., ge=0.0, le=10.0)
+
+    summary_feedback: str = Field(..., max_length=2000)
+    strengths: List[str] = Field(default_factory=list, max_length=5)
+    improvements: List[str] = Field(default_factory=list, max_length=5)
+    model_answer_snippet: Optional[str] = None
+
+    routing_hint: str = Field(
+        ..., description="One of: 'next_question', 'follow_up', 'drill_deeper', 'skip_to_harder'"
+    )
+    suggested_follow_up: Optional[str] = None
+    skill_level_inferred: Optional[ProficiencyLevel] = None
+
+    evaluator_version: str = Field(default="1.0.0")
+    latency_ms: int = Field(..., description="Evaluation inference time")
+
+
+class InterviewTurn(BaseModel):
+    """A single Q-A-eval triad. Immutable once evaluated."""
     
 class TurnStatus(str, Enum):
     PENDING = "pending"
@@ -173,6 +239,11 @@ class InterviewTurn(BaseModel):
     answer_started_at: Optional[datetime] = None
     answer_submitted_at: Optional[datetime] = None
     status: TurnStatus = TurnStatus.PENDING
+    evaluation: Optional[AnswerEvaluation] = None
+    follow_up_turns: List[InterviewTurn] = Field(
+        default_factory=list,
+        description="Nested follow-ups (tree structure, usually depth <= 2)"
+    )
     evaluation: Optional["AnswerEvaluation"] = None
     follow_up_turns: List["InterviewTurn"] = Field(default_factory=list)
 
@@ -198,6 +269,7 @@ class InterviewSession(BaseModel):
     session_started_at: datetime
     session_ended_at: Optional[datetime] = None
     config: dict = Field(
+        default_factory=lambda: {"max_turns": 12, "allow_follow_ups": True}
         default_factory=lambda: {
             "max_turns": 12,
             "allow_follow_ups": True,
@@ -206,6 +278,40 @@ class InterviewSession(BaseModel):
 
     @property
     def completed_turns(self) -> List[InterviewTurn]:
+        return [t for t in self.turns if t.status == TurnStatus.EVALUATED]
+
+
+class SkillProgression(BaseModel):
+    skill_name: str
+    initial_gap: ProficiencyLevel
+    final_inferred_level: ProficiencyLevel
+    progression_delta: int
+    evidence_turns: List[int]
+
+
+class FinalReport(BaseModel):
+    report_id: str
+    session_id: str
+    candidate_id: str
+    job_id: str
+    generated_at: datetime
+
+    overall_score: float = Field(..., ge=0.0, le=10.0)
+    percentile_estimate: Optional[float] = Field(None, ge=0.0, le=100.0)
+    readiness_level: str = Field(..., description="e.g., 'ready', 'needs_work', 'not_ready'")
+
+    dimension_averages: dict[ScoreDimension, float]
+    skill_progressions: List[SkillProgression]
+    per_turn_evaluations: List[AnswerEvaluation]
+
+    executive_summary: str
+    top_strengths: List[str]
+    priority_gaps: List[str]
+    study_plan: List[str] = Field(default_factory=list)
+
+    total_session_duration_seconds: int
+    total_turns: int
+    report_version: str = "1.0.0"
         return [
             turn
             for turn in self.turns

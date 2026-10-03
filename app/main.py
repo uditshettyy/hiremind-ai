@@ -15,6 +15,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
+from app.agents.evaluation.router import router as evaluation_router
+
 app = FastAPI(title="AI Career Intelligence & Interview Agent")
 
 
@@ -24,6 +26,10 @@ async def health():
 
 
 app.include_router(intake_router)
+
+
+app.include_router(evaluation_router)
+
 app.include_router(interview_router)
 app.include_router(interview_websocket_router)
 # When Person B's interview router and your evaluation router exist, wire
