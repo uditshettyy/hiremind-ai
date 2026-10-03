@@ -221,6 +221,17 @@ class AnswerEvaluation(BaseModel):
 
 class InterviewTurn(BaseModel):
     """A single Q-A-eval triad. Immutable once evaluated."""
+    
+class TurnStatus(str, Enum):
+    PENDING = "pending"
+    ANSWERED = "answered"
+    EVALUATED = "evaluated"
+    FOLLOW_UP = "follow_up"
+    SKIPPED = "skipped"
+
+
+class InterviewTurn(BaseModel):
+    """A single Q-A-evaluation cycle."""
     turn_number: int
     question: Question
     answer_text: Optional[str] = None
@@ -233,6 +244,8 @@ class InterviewTurn(BaseModel):
         default_factory=list,
         description="Nested follow-ups (tree structure, usually depth <= 2)"
     )
+    evaluation: Optional["AnswerEvaluation"] = None
+    follow_up_turns: List["InterviewTurn"] = Field(default_factory=list)
 
 
 class SessionStatus(str, Enum):
@@ -257,6 +270,10 @@ class InterviewSession(BaseModel):
     session_ended_at: Optional[datetime] = None
     config: dict = Field(
         default_factory=lambda: {"max_turns": 12, "allow_follow_ups": True}
+        default_factory=lambda: {
+            "max_turns": 12,
+            "allow_follow_ups": True,
+        }
     )
 
     @property
@@ -295,3 +312,48 @@ class FinalReport(BaseModel):
     total_session_duration_seconds: int
     total_turns: int
     report_version: str = "1.0.0"
+        return [
+            turn
+            for turn in self.turns
+            if turn.status == TurnStatus.EVALUATED
+        ]
+
+
+class ScoreDimension(str, Enum):
+    ACCURACY = "accuracy"
+    DEPTH = "depth"
+    CLARITY = "clarity"
+    RELEVANCE = "relevance"
+    CONFIDENCE = "confidence"
+
+
+class DimensionScore(BaseModel):
+    dimension: ScoreDimension
+    score: float = Field(..., ge=0.0, le=10.0)
+    rationale: str = Field(..., max_length=500)
+
+
+class AnswerEvaluation(BaseModel):
+    """Evaluation returned by the Evaluation Agent."""
+    evaluation_id: str = Field(..., description="UUIDv4")
+    session_id: str
+    turn_number: int
+    candidate_id: str
+    evaluated_at: datetime
+
+    dimension_scores: List[DimensionScore]
+    overall_score: float = Field(..., ge=0.0, le=10.0)
+    weighted_score: float = Field(..., ge=0.0, le=10.0)
+
+    summary_feedback: str = Field(..., max_length=2000)
+    strengths: List[str] = Field(default_factory=list, max_length=5)
+    improvements: List[str] = Field(default_factory=list, max_length=5)
+    model_answer_snippet: Optional[str] = None
+
+    routing_hint: str
+    suggested_follow_up: Optional[str] = None
+
+    skill_level_inferred: Optional[ProficiencyLevel] = None
+
+    evaluator_version: str = "1.0.0"
+    latency_ms: int

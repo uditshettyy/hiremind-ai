@@ -1,5 +1,5 @@
 from logging.config import fileConfig
-
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import async_engine_from_config
 import asyncio
 from sqlalchemy import pool
@@ -9,7 +9,9 @@ import os
 from app.core.database import Base
 import app.core.models
 # this is the Alembic Config object, which provides
+
 # access to the values within the .ini file in use.
+load_dotenv()
 config = context.config
 
 # Interpret the config file for Python logging.
