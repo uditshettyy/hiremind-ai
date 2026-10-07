@@ -156,8 +156,7 @@ async def test_analyze_skill_gap_writes_document_chunks_when_wired(
         generate_structured=mock_generate_structured,
         db_session=fake_db_session, embed_fn=mock_embed_fn,
     )
-    # Both resume and JD text should have been chunked and added.
-    added_source_types = {chunk.source_type for chunk in fake_db_session.added}
+    added_source_types = {chunk.source_type for chunk in fake_db_session.added if hasattr(chunk, "source_type")}
     assert added_source_types == {"resume", "jd"}
 
 

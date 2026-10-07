@@ -22,6 +22,14 @@ from app.agents.intake.parser import ResumeProfile, parse_resume as _parse_resum
 logger = logging.getLogger(__name__)
 
 
+def parse_or_gen_uuid(val: str, namespace: str) -> uuid.UUID:
+    """Safely parse a string as UUID v4, or generate a deterministic UUID v5 if non-UUID."""
+    try:
+        return uuid.UUID(val)
+    except (ValueError, TypeError, AttributeError):
+        return uuid.uuid5(uuid.NAMESPACE_URL, f"{namespace}:{val}")
+
+
 async def parse_resume(
     filename: str,
     content: bytes,
@@ -54,10 +62,7 @@ async def _chunk_and_embed(
     try:
         from app.core.models import DocumentChunk  # SQLAlchemy ORM model, §3.1
 
-        try:
-            parsed_uuid = uuid.UUID(source_id)
-        except (ValueError, TypeError, AttributeError):
-            parsed_uuid = uuid.uuid5(uuid.NAMESPACE_URL, f"{source_type}:{source_id}")
+        parsed_uuid = parse_or_gen_uuid(source_id, source_type)
 
         chunk_size, overlap = 800, 100
         chunks = [text[i : i + chunk_size] for i in range(0, len(text), chunk_size - overlap)]
@@ -71,7 +76,15 @@ async def _chunk_and_embed(
             )
         await db_session.flush()
     except Exception as exc:
-        logger.warning("Failed to chunk and embed document (source_type=%s, source_id=%s): %s", source_type, source_id, exc)
+        logger.error("Failed to chunk and embed document (source_type=%s, source_id=%s): %s", source_type, source_id, exc)
+        if not isinstance(exc, (TypeError, AttributeError)):
+            raise RuntimeError(f"Database error during chunk embedding: {exc}") from exc
+
+
+async def _get_existing(db_session, model_cls, entity_id):
+    if hasattr(db_session, "get") and callable(getattr(db_session, "get")):
+        return await db_session.get(model_cls, entity_id)
+    return None
 
 
 async def _persist_intake_entities(
@@ -81,6 +94,8 @@ async def _persist_intake_entities(
     parsed_jd: ParsedJobDescription,
     report: SkillGapReport,
     db_session,
+    candidate_name: Optional[str] = None,
+    candidate_email: Optional[str] = None,
 ) -> None:
     """Persist Candidate, Job, and SkillGapReport records to Postgres."""
     if db_session is None:
@@ -89,29 +104,26 @@ async def _persist_intake_entities(
     try:
         from app.core.models import Candidate, Job, SkillGapReportORM
 
-        def parse_or_gen_uuid(val: str, namespace: str) -> uuid.UUID:
-            try:
-                return uuid.UUID(val)
-            except (ValueError, TypeError, AttributeError):
-                return uuid.uuid5(uuid.NAMESPACE_URL, f"{namespace}:{val}")
-
         cand_uuid = parse_or_gen_uuid(candidate_id, "candidate")
         job_uuid = parse_or_gen_uuid(job_id, "job")
         report_uuid = parse_or_gen_uuid(report.report_id, "skill_gap_report")
 
+        email = candidate_email or f"candidate_{str(cand_uuid)[:8]}@example.com"
+        name = candidate_name or "Candidate"
+
         # 1. Ensure Candidate record
-        existing_cand = await db_session.get(Candidate, cand_uuid)
+        existing_cand = await _get_existing(db_session, Candidate, cand_uuid)
         if existing_cand is None:
             db_session.add(
                 Candidate(
                     id=cand_uuid,
-                    email=f"candidate_{str(cand_uuid)[:8]}@example.com",
-                    name="Candidate",
+                    email=email,
+                    name=name,
                 )
             )
 
         # 2. Ensure Job record
-        existing_job = await db_session.get(Job, job_uuid)
+        existing_job = await _get_existing(db_session, Job, job_uuid)
         if existing_job is None:
             db_session.add(
                 Job(
@@ -124,7 +136,7 @@ async def _persist_intake_entities(
             )
 
         # 3. Ensure SkillGapReportORM record
-        existing_report = await db_session.get(SkillGapReportORM, report_uuid)
+        existing_report = await _get_existing(db_session, SkillGapReportORM, report_uuid)
         if existing_report is None:
             db_session.add(
                 SkillGapReportORM(
@@ -140,7 +152,9 @@ async def _persist_intake_entities(
 
         await db_session.flush()
     except Exception as exc:
-        logger.warning("Failed to persist intake entities to DB: %s", exc)
+        logger.error("Failed to persist intake entities to DB: %s", exc)
+        if not isinstance(exc, (TypeError, AttributeError)):
+            raise RuntimeError(f"Database error during intake entity persistence: {exc}") from exc
 
 
 async def analyze_skill_gap(
@@ -152,16 +166,22 @@ async def analyze_skill_gap(
     generate_structured: Callable[..., Awaitable] | None = None,
     db_session=None,
     embed_fn: Callable[..., Awaitable] | None = None,
+    candidate_name: Optional[str] = None,
+    candidate_email: Optional[str] = None,
 ) -> SkillGapReport:
     """parse (already done by caller) -> chunk/embed -> gap analysis -> DB persistence."""
+    cand_uuid = parse_or_gen_uuid(candidate_id, "candidate")
+    job_uuid = parse_or_gen_uuid(job_id, "job")
+
     await _chunk_and_embed(
-        source_type="resume", source_id=candidate_id, text=resume_text,
+        source_type="resume", source_id=str(cand_uuid), text=resume_text,
         db_session=db_session, embed_fn=embed_fn,
     )
     await _chunk_and_embed(
-        source_type="jd", source_id=job_id, text=parsed_jd.raw_text,
+        source_type="jd", source_id=str(job_uuid), text=parsed_jd.raw_text,
         db_session=db_session, embed_fn=embed_fn,
     )
+
     report = await gap_analyzer.build_skill_gap_report(
         candidate_id=candidate_id,
         job_id=job_id,
@@ -169,17 +189,24 @@ async def analyze_skill_gap(
         parsed_jd=parsed_jd,
         generate_structured=generate_structured,
     )
+
     await _persist_intake_entities(
         candidate_id=candidate_id,
         job_id=job_id,
         parsed_jd=parsed_jd,
         report=report,
         db_session=db_session,
+        candidate_name=candidate_name,
+        candidate_email=candidate_email,
     )
-    if db_session is not None:
+
+    if db_session is not None and hasattr(db_session, "commit"):
         try:
             await db_session.commit()
         except Exception as exc:
-            logger.warning("Failed to commit intake DB transaction: %s", exc)
+            logger.error("Failed to commit intake DB transaction: %s", exc)
+            if hasattr(db_session, "rollback"):
+                await db_session.rollback()
+            raise RuntimeError(f"Database transaction commit failed: {exc}") from exc
 
     return report
