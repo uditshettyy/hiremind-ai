@@ -17,7 +17,10 @@ async def lifespan(app: FastAPI):
 
 from app.agents.evaluation.router import router as evaluation_router
 
-app = FastAPI(title="AI Career Intelligence & Interview Agent")
+app = FastAPI(
+    title="AI Career Intelligence & Interview Agent",
+    lifespan=lifespan,
+)
 
 
 @app.get("/health", tags=["health"])
