@@ -3,19 +3,23 @@
 Per ARCHITECTURE.md's folder structure, service.py is business-logic
 *orchestration* — the actual parsing lives in parser.py/jd_parser.py and the
 actual comparison logic lives in gap_analyzer.py. This file wires them
-together and (new) performs the chunk+embed step into document_chunks that
-Module 2's RAG question generator will read from later.
+together and performs chunk+embed step into document_chunks as well as
+persisting Candidate, Job, and SkillGapReport records for Module 2 and 3.
 
 Shared models (ProficiencyLevel, SkillGap, SkillGapReport) are imported from
 app/core/schemas.py, never redefined here, per the single-source-of-truth rule.
 """
+import logging
 from typing import Awaitable, Callable, Optional
+import uuid
 
 from app.core.schemas import SkillGapReport  # re-exported for router convenience
 
 from app.agents.intake import gap_analyzer, parser
 from app.agents.intake.jd_parser import ParsedJobDescription, parse_job_description
 from app.agents.intake.parser import ResumeProfile, parse_resume as _parse_resume
+
+logger = logging.getLogger(__name__)
 
 
 async def parse_resume(
@@ -35,12 +39,6 @@ async def parse_jd(
     return await parse_job_description(raw_text, generate_structured)
 
 
-import logging
-import uuid
-
-logger = logging.getLogger(__name__)
-
-
 async def _chunk_and_embed(
     *,
     source_type: str,
@@ -49,13 +47,7 @@ async def _chunk_and_embed(
     db_session,
     embed_fn: Callable[..., Awaitable] | None,
 ) -> None:
-    """Write resume/JD text into document_chunks for Module 2's RAG retrieval.
-
-    No-op when db_session/embed_fn aren't supplied, so Phase-1 tests (and any
-    caller not yet wired to Postgres/an embedding model) keep working without
-    a real database. Wire real values in once app/utils/vector_store.py and
-    the DB session dependency exist.
-    """
+    """Write resume/JD text into document_chunks for Module 2's RAG retrieval."""
     if db_session is None or embed_fn is None:
         return
 
@@ -82,6 +74,75 @@ async def _chunk_and_embed(
         logger.warning("Failed to chunk and embed document (source_type=%s, source_id=%s): %s", source_type, source_id, exc)
 
 
+async def _persist_intake_entities(
+    *,
+    candidate_id: str,
+    job_id: str,
+    parsed_jd: ParsedJobDescription,
+    report: SkillGapReport,
+    db_session,
+) -> None:
+    """Persist Candidate, Job, and SkillGapReport records to Postgres."""
+    if db_session is None:
+        return
+
+    try:
+        from app.core.models import Candidate, Job, SkillGapReportORM
+
+        def parse_or_gen_uuid(val: str, namespace: str) -> uuid.UUID:
+            try:
+                return uuid.UUID(val)
+            except (ValueError, TypeError, AttributeError):
+                return uuid.uuid5(uuid.NAMESPACE_URL, f"{namespace}:{val}")
+
+        cand_uuid = parse_or_gen_uuid(candidate_id, "candidate")
+        job_uuid = parse_or_gen_uuid(job_id, "job")
+        report_uuid = parse_or_gen_uuid(report.report_id, "skill_gap_report")
+
+        # 1. Ensure Candidate record
+        existing_cand = await db_session.get(Candidate, cand_uuid)
+        if existing_cand is None:
+            db_session.add(
+                Candidate(
+                    id=cand_uuid,
+                    email=f"candidate_{str(cand_uuid)[:8]}@example.com",
+                    name="Candidate",
+                )
+            )
+
+        # 2. Ensure Job record
+        existing_job = await db_session.get(Job, job_uuid)
+        if existing_job is None:
+            db_session.add(
+                Job(
+                    id=job_uuid,
+                    title=parsed_jd.title or "Job Description",
+                    company=parsed_jd.company,
+                    raw_description=parsed_jd.raw_text,
+                    parsed_requirements=parsed_jd.model_dump(mode="json"),
+                )
+            )
+
+        # 3. Ensure SkillGapReportORM record
+        existing_report = await db_session.get(SkillGapReportORM, report_uuid)
+        if existing_report is None:
+            db_session.add(
+                SkillGapReportORM(
+                    id=report_uuid,
+                    candidate_id=cand_uuid,
+                    job_id=job_uuid,
+                    overall_match_score=report.overall_match_score,
+                    top_gaps=[g.model_dump(mode="json") for g in report.top_gaps],
+                    strengths=[g.model_dump(mode="json") for g in report.strengths],
+                    metadata_=report.metadata,
+                )
+            )
+
+        await db_session.flush()
+    except Exception as exc:
+        logger.warning("Failed to persist intake entities to DB: %s", exc)
+
+
 async def analyze_skill_gap(
     *,
     candidate_id: str,
@@ -92,7 +153,7 @@ async def analyze_skill_gap(
     db_session=None,
     embed_fn: Callable[..., Awaitable] | None = None,
 ) -> SkillGapReport:
-    """parse (already done by caller) -> chunk/embed -> gap analysis."""
+    """parse (already done by caller) -> chunk/embed -> gap analysis -> DB persistence."""
     await _chunk_and_embed(
         source_type="resume", source_id=candidate_id, text=resume_text,
         db_session=db_session, embed_fn=embed_fn,
@@ -101,10 +162,24 @@ async def analyze_skill_gap(
         source_type="jd", source_id=job_id, text=parsed_jd.raw_text,
         db_session=db_session, embed_fn=embed_fn,
     )
-    return await gap_analyzer.build_skill_gap_report(
+    report = await gap_analyzer.build_skill_gap_report(
         candidate_id=candidate_id,
         job_id=job_id,
         resume_text=resume_text,
         parsed_jd=parsed_jd,
         generate_structured=generate_structured,
     )
+    await _persist_intake_entities(
+        candidate_id=candidate_id,
+        job_id=job_id,
+        parsed_jd=parsed_jd,
+        report=report,
+        db_session=db_session,
+    )
+    if db_session is not None:
+        try:
+            await db_session.commit()
+        except Exception as exc:
+            logger.warning("Failed to commit intake DB transaction: %s", exc)
+
+    return report
