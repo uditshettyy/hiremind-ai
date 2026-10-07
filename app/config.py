@@ -1,8 +1,4 @@
-"""App-wide settings, per ARCHITECTURE.md §4 folder structure (app/config.py).
-
-If this file already exists in your repo, merge these fields in rather than
-overwriting — don't lose any settings Person B or earlier scaffolding added.
-"""
+"""App-wide settings, per ARCHITECTURE.md §4 folder structure (app/config.py)."""
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +10,8 @@ class Settings(BaseSettings):
     llm_provider: str = "groq"  # "openai" | "anthropic" | "groq"
     mistral_api_key: str = ""
     groq_api_key: str = ""
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/hiremind"
 

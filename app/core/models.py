@@ -8,8 +8,8 @@ from __future__ import annotations
 from datetime import datetime
 import uuid
 
-from sqlalchemy import CheckConstraint, ForeignKey, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID, TIMESTAMP
+from sqlalchemy import ARRAY, CheckConstraint, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSON, JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 
@@ -110,6 +110,9 @@ class InterviewSession(Base):
     ended_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
 
 
+InterviewSessionORM = InterviewSession
+
+
 class InterviewTurn(Base):
     __tablename__ = "interview_turns"
     __table_args__ = (
@@ -133,6 +136,9 @@ class InterviewTurn(Base):
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
+
+
+InterviewTurnORM = InterviewTurn
 
 
 class AnswerEvaluationORM(Base):
@@ -165,7 +171,7 @@ class AnswerEvaluationORM(Base):
     )
 
 
-class FinalReport(Base):
+class FinalReportORM(Base):
     __tablename__ = "final_reports"
     __table_args__ = (CheckConstraint("overall_score BETWEEN 0.0 AND 10.0"),)
 
@@ -185,12 +191,9 @@ class FinalReport(Base):
     generated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
-from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, String, Text, Integer, DateTime, JSON, ARRAY
-from sqlalchemy.dialects.postgresql import UUID
-from app.core.database import Base
-from sqlalchemy.sql import func
-import uuid
+
+
+FinalReport = FinalReportORM
 
 
 class QuestionBank(Base):
