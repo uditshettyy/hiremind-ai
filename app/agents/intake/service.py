@@ -77,14 +77,7 @@ async def _chunk_and_embed(
         await db_session.flush()
     except Exception as exc:
         logger.error("Failed to chunk and embed document (source_type=%s, source_id=%s): %s", source_type, source_id, exc)
-        if not isinstance(exc, (TypeError, AttributeError)):
-            raise RuntimeError(f"Database error during chunk embedding: {exc}") from exc
-
-
-async def _get_existing(db_session, model_cls, entity_id):
-    if hasattr(db_session, "get") and callable(getattr(db_session, "get")):
-        return await db_session.get(model_cls, entity_id)
-    return None
+        raise RuntimeError(f"Database error during chunk embedding: {exc}") from exc
 
 
 async def _persist_intake_entities(
@@ -112,7 +105,7 @@ async def _persist_intake_entities(
         name = candidate_name or "Candidate"
 
         # 1. Ensure Candidate record
-        existing_cand = await _get_existing(db_session, Candidate, cand_uuid)
+        existing_cand = await db_session.get(Candidate, cand_uuid)
         if existing_cand is None:
             db_session.add(
                 Candidate(
@@ -123,7 +116,7 @@ async def _persist_intake_entities(
             )
 
         # 2. Ensure Job record
-        existing_job = await _get_existing(db_session, Job, job_uuid)
+        existing_job = await db_session.get(Job, job_uuid)
         if existing_job is None:
             db_session.add(
                 Job(
@@ -136,7 +129,7 @@ async def _persist_intake_entities(
             )
 
         # 3. Ensure SkillGapReportORM record
-        existing_report = await _get_existing(db_session, SkillGapReportORM, report_uuid)
+        existing_report = await db_session.get(SkillGapReportORM, report_uuid)
         if existing_report is None:
             db_session.add(
                 SkillGapReportORM(
@@ -153,8 +146,7 @@ async def _persist_intake_entities(
         await db_session.flush()
     except Exception as exc:
         logger.error("Failed to persist intake entities to DB: %s", exc)
-        if not isinstance(exc, (TypeError, AttributeError)):
-            raise RuntimeError(f"Database error during intake entity persistence: {exc}") from exc
+        raise RuntimeError(f"Database error during intake entity persistence: {exc}") from exc
 
 
 async def analyze_skill_gap(

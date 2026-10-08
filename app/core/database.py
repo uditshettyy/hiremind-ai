@@ -34,9 +34,13 @@ class Base(DeclarativeBase):
     pass
 
 
+from sqlalchemy import text
+
+
 async def init_db() -> None:
-    """Initialize database tables."""
+    """Initialize database extensions and tables."""
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         await conn.run_sync(Base.metadata.create_all)
 
 
