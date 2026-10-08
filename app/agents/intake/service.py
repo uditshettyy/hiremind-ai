@@ -175,16 +175,25 @@ async def analyze_skill_gap(
     )
 
     report = await gap_analyzer.build_skill_gap_report(
-        candidate_id=candidate_id,
-        job_id=job_id,
+        candidate_id=str(cand_uuid),
+        job_id=str(job_uuid),
         resume_text=resume_text,
         parsed_jd=parsed_jd,
         generate_structured=generate_structured,
     )
 
+    report_uuid = parse_or_gen_uuid(report.report_id, "skill_gap_report")
+    report = report.model_copy(
+        update={
+            "candidate_id": str(cand_uuid),
+            "job_id": str(job_uuid),
+            "report_id": str(report_uuid),
+        }
+    )
+
     await _persist_intake_entities(
-        candidate_id=candidate_id,
-        job_id=job_id,
+        candidate_id=str(cand_uuid),
+        job_id=str(job_uuid),
         parsed_jd=parsed_jd,
         report=report,
         db_session=db_session,

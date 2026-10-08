@@ -165,6 +165,7 @@ async def test_analyze_skill_gap_no_ops_chunking_when_unwired(
 ):
     """Confirms the Phase-1 no-op path (no db_session/embed_fn) still works —
     this is what lets earlier tests run without a real database."""
+    import uuid
     parsed_jd = ParsedJobDescription(
         title="Senior Backend Engineer", requirements=[], raw_text=sample_jd_text,
     )
@@ -173,4 +174,33 @@ async def test_analyze_skill_gap_no_ops_chunking_when_unwired(
         resume_text=sample_resume_text, parsed_jd=parsed_jd,
         generate_structured=mock_generate_structured,
     )
-    assert report.candidate_id == "cand-123"
+    assert uuid.UUID(report.candidate_id)
+    assert uuid.UUID(report.job_id)
+
+
+async def test_analyze_skill_gap_normalizes_non_uuid_ids(
+    sample_resume_text, sample_jd_text, mock_generate_structured, fake_db_session,
+):
+    import uuid
+    from app.core.models import Candidate
+
+    parsed_jd = ParsedJobDescription(
+        title="Senior Backend Engineer", requirements=[], raw_text=sample_jd_text,
+    )
+    report = await service.analyze_skill_gap(
+        candidate_id="cand-123", job_id="job-456",
+        resume_text=sample_resume_text, parsed_jd=parsed_jd,
+        generate_structured=mock_generate_structured,
+        db_session=fake_db_session,
+    )
+    cand_uuid = uuid.UUID(report.candidate_id)
+    job_uuid = uuid.UUID(report.job_id)
+    report_uuid = uuid.UUID(report.report_id)
+
+    assert str(cand_uuid) == report.candidate_id
+    assert str(job_uuid) == report.job_id
+    assert str(report_uuid) == report.report_id
+
+    cand_row = await fake_db_session.get(Candidate, cand_uuid)
+    assert cand_row is not None
+    assert cand_row.id == cand_uuid

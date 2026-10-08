@@ -59,6 +59,9 @@ async def test_parse_jd_route_rejects_empty_text(client):
     assert resp.status_code == 400
 
 
+from app.agents.intake.service import parse_or_gen_uuid
+
+
 async def test_analyze_skill_gap_route(client, sample_resume_text, sample_jd_text):
     parsed_jd_payload = {
         "title": "Senior Backend Engineer",
@@ -78,8 +81,10 @@ async def test_analyze_skill_gap_route(client, sample_resume_text, sample_jd_tex
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["candidate_id"] == "cand-123"
-    assert body["job_id"] == "job-456"
+    cand_uuid = str(parse_or_gen_uuid("cand-123", "candidate"))
+    job_uuid = str(parse_or_gen_uuid("job-456", "job"))
+    assert body["candidate_id"] == cand_uuid
+    assert body["job_id"] == job_uuid
 
 
 async def test_routes_return_503_when_llm_not_wired(sample_jd_text, fake_db_session):
