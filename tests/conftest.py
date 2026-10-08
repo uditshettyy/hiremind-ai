@@ -155,7 +155,7 @@ def mock_embed_fn():
 
 
 class FakeAsyncSession:
-    """Minimal stand-in for AsyncSession — enough for _chunk_and_embed's add()/flush()."""
+    """Minimal stand-in for AsyncSession for unit testing."""
 
     def __init__(self):
         self.added = []
@@ -163,10 +163,22 @@ class FakeAsyncSession:
     def add(self, obj):
         self.added.append(obj)
 
+    async def get(self, model_cls, entity_id):
+        for obj in self.added:
+            if isinstance(obj, model_cls) and getattr(obj, "id", None) == entity_id:
+                return obj
+        return None
+
     async def flush(self):
+        pass
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
         pass
 
 
 @pytest.fixture
 def fake_db_session():
-    return FakeAsyncSession()
+    return FakeAsyncSession()

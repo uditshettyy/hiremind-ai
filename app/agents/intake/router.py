@@ -6,6 +6,8 @@ app/utils/llm_client.py exists, the default dependency returns None and routes
 respond 503 (not an unhandled 500) so the "not wired yet" state is explicit.
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +42,8 @@ class SkillGapRequest(BaseModel):
     job_id: str
     resume_text: str
     parsed_jd: ParsedJobDescription
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
 
 
 from app.utils.llm_client import LLMError, LLMRateLimitError
@@ -105,6 +109,8 @@ async def analyze_skill_gap_route(
             generate_structured=generate_structured,
             db_session=db,
             embed_fn=embed_texts,
+            candidate_name=request.candidate_name,
+            candidate_email=request.candidate_email,
         )
     except (ValueError, RuntimeError) as exc:
         _handle_llm_errors(exc)
