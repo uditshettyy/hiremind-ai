@@ -1,3 +1,4 @@
+
 """
 Interview Agent LangGraph nodes.
 
@@ -5,14 +6,13 @@ Phase 3 implementation based on ARCHITECTURE.md.
 """
 
 import os
-from typing import TypedDict
 import asyncio
-from app.agents.interview.evaluation_mock import evaluate_answer
-from app.core.schemas import AnswerEvaluation
+from datetime import datetime, timezone
+from typing import TypedDict
+
+from app.agents.evaluation.scorer import evaluate_answer
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from datetime import datetime, timezone
 
 from app.core.schemas import (
     InterviewSession,
@@ -24,9 +24,7 @@ from app.core.schemas import (
 
 
 class InterviewGraphState(TypedDict, total=False):
-    """
-    State passed between Interview Agent LangGraph nodes.
-    """
+    """State passed between Interview Agent LangGraph nodes."""
 
     session: InterviewSession
     skill_gap_report: SkillGapReport
@@ -38,14 +36,11 @@ class InterviewGraphState(TypedDict, total=False):
     openai_client: AsyncOpenAI
     answer_text: str
 
+
 async def load_skill_gap(
     state: InterviewGraphState,
 ) -> InterviewGraphState:
-    """
-    Load the SkillGapReport required by the Interview Agent.
-
-    Module 1 -> Module 2 handoff is SkillGapReport.
-    """
+    """Load the SkillGapReport required by the Interview Agent."""
 
     skill_gap_report = state.get("skill_gap_report")
 
@@ -63,10 +58,8 @@ async def load_skill_gap(
 async def init_question_set(
     state: InterviewGraphState,
 ) -> InterviewGraphState:
-    """
-    Generate the initial QuestionSet from the SkillGapReport.
-    """
-    
+    """Generate the initial QuestionSet from the SkillGapReport."""
+
     skill_gap_report = state.get("skill_gap_report")
 
     if skill_gap_report is None:
@@ -113,14 +106,12 @@ async def init_question_set(
             }
         ),
     }
+
+
 async def ask_question(
     state: InterviewGraphState,
 ) -> InterviewGraphState:
-    """
-    Prepare the current interview question.
-
-    The WebSocket layer will emit the question to the client later.
-    """
+    """Prepare the current interview question."""
 
     session = state.get("session")
 
@@ -156,15 +147,11 @@ async def ask_question(
         "session": updated_session,
     }
 
+
 async def await_answer(
     state: InterviewGraphState,
 ) -> InterviewGraphState:
-    """
-    Process the candidate's submitted answer.
-
-    The WebSocket layer will provide the answer text.
-    This node attaches it to the current InterviewTurn.
-    """
+    """Attach the candidate's submitted answer to the current turn."""
 
     session = state.get("session")
 
@@ -181,9 +168,7 @@ async def await_answer(
     answer_text = state.get("answer_text")
 
     if not answer_text:
-        raise ValueError(
-            "Candidate answer is required."
-        )
+        raise ValueError("Candidate answer is required.")
 
     current_turn = session.turns[-1]
 
@@ -195,14 +180,12 @@ async def await_answer(
         }
     )
 
-    updated_turns = [
-        *session.turns[:-1],
-        updated_turn,
-    ]
-
     updated_session = session.model_copy(
         update={
-            "turns": updated_turns,
+            "turns": [
+                *session.turns[:-1],
+                updated_turn,
+            ],
         }
     )
 
@@ -210,31 +193,24 @@ async def await_answer(
         **state,
         "session": updated_session,
     }
+
+
+
 async def evaluate_turn(
     state: InterviewGraphState,
 ) -> InterviewGraphState:
-    """
-    Evaluate the candidate's current interview answer.
-    """
+    """Evaluate the candidate's current interview answer."""
 
     session = state.get("session")
-
     if session is None:
-        raise ValueError(
-            "InterviewSession is required before evaluating an answer."
-        )
+        raise ValueError("InterviewSession is required.")
 
     if not session.turns:
-        raise ValueError(
-            "There is no interview turn available for evaluation."
-        )
+        raise ValueError("No interview turn available for evaluation.")
 
     skill_gap_report = state.get("skill_gap_report")
-
     if skill_gap_report is None:
-        raise ValueError(
-            "SkillGapReport is required for answer evaluation."
-        )
+        raise ValueError("SkillGapReport is required for evaluation.")
 
     current_turn = session.turns[-1]
 
@@ -243,19 +219,28 @@ async def evaluate_turn(
             "Current interview turn must be ANSWERED before evaluation."
         )
 
-    evaluation = await asyncio.wait_for(
+    if not current_turn.answer_text or not current_turn.answer_text.strip():
+        raise ValueError("Candidate answer must not be empty.")
+
+    job_description_text = state.get("job_description_text")
+    candidate_resume_text = state.get("candidate_resume_text")
+
+    if not job_description_text or not candidate_resume_text:
+        raise ValueError(
+            "Job description and resume text are required for evaluation."
+        )
+
+    # Call Person A's real Evaluation Agent.
+    evaluation: AnswerEvaluation = await asyncio.wait_for(
         evaluate_answer(
             turn=current_turn,
             skill_gap_report=skill_gap_report,
             session_history=session.turns[:-1],
-            job_description_text=state.get(
-                "job_description_text",
-                "",
-            ),
-            candidate_resume_text=state.get(
-                "candidate_resume_text",
-                "",
-            ),
+            job_description_text=job_description_text,
+            candidate_resume_text=candidate_resume_text,
+            model=None,
+            temperature=0.2,
+            timeout_seconds=25,
         ),
         timeout=30,
     )
@@ -280,12 +265,12 @@ async def evaluate_turn(
         **state,
         "session": updated_session,
     }
+
+
 def route_after_evaluation(
     state: InterviewGraphState,
 ) -> str:
-    """
-    Decide what the Interview Agent should do after evaluation.
-    """
+    """Decide what the Interview Agent should do after evaluation."""
 
     session = state.get("session")
 
@@ -321,19 +306,17 @@ def route_after_evaluation(
         )
 
     return routing_hint
+
+
 def move_to_next_question(
     state: InterviewGraphState,
 ) -> InterviewGraphState:
-    """
-    Move the interview to the next question in the QuestionSet.
-    """
+    """Move the interview to the next question in the QuestionSet."""
 
     session = state.get("session")
 
     if session is None:
-        raise ValueError(
-            "InterviewSession is required."
-        )
+        raise ValueError("InterviewSession is required.")
 
     question_set = session.question_set
 
@@ -369,7 +352,13 @@ def move_to_next_question(
         **state,
         "session": updated_session,
     }
-def handle_follow_up(state: InterviewGraphState) -> InterviewGraphState:
+
+
+def handle_follow_up(
+    state: InterviewGraphState,
+) -> InterviewGraphState:
+    """Create a follow-up turn using the evaluation's suggestion."""
+
     session = state.get("session")
 
     if session is None:
@@ -386,13 +375,17 @@ def handle_follow_up(state: InterviewGraphState) -> InterviewGraphState:
     follow_up_question = latest_turn.evaluation.suggested_follow_up
 
     if not follow_up_question:
-        raise ValueError("Evaluation does not contain a suggested follow-up question.")
+        raise ValueError(
+            "Evaluation does not contain a suggested follow-up question."
+        )
 
     follow_up_turn = InterviewTurn(
         turn_number=session.current_turn_number + 1,
         question=latest_turn.question.model_copy(
             update={
-                "question_id": f"{latest_turn.question.question_id}-followup",
+                "question_id": (
+                    f"{latest_turn.question.question_id}-followup"
+                ),
                 "question_text": follow_up_question,
                 "question_type": "follow_up",
             }
@@ -411,7 +404,13 @@ def handle_follow_up(state: InterviewGraphState) -> InterviewGraphState:
         **state,
         "session": updated_session,
     }
-def handle_drill_deeper(state: InterviewGraphState) -> InterviewGraphState:
+
+
+def handle_drill_deeper(
+    state: InterviewGraphState,
+) -> InterviewGraphState:
+    """Increase question difficulty for a deeper interview turn."""
+
     session = state.get("session")
 
     if session is None:
