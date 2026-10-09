@@ -34,6 +34,7 @@ MIN_ANSWER_WORDS = 8
 VALID_ROUTING_HINTS = {"next_question", "follow_up", "drill_deeper", "skip_to_harder"}
 
 
+
 async def evaluate_answer(
     *,
     turn: InterviewTurn,
@@ -46,6 +47,7 @@ async def evaluate_answer(
     timeout_seconds: int = 30,
     _generate_structured: GenerateStructured = default_generate_structured,
 ) -> AnswerEvaluation:
+
     """Evaluate a single answer within the full interview context.
 
     This function is called **synchronously within the LangGraph loop**

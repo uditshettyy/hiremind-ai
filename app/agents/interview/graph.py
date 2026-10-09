@@ -29,6 +29,7 @@ from app.agents.interview.nodes import (
     ask_question,
     await_answer,
     evaluate_turn,
+    handle_drill_deeper,
     handle_follow_up,
     init_question_set,
     load_skill_gap,
@@ -90,6 +91,12 @@ def handle_follow_up_node(
     return handle_follow_up(state)
 
 
+def handle_drill_deeper_node(
+    state: InterviewGraphState,
+) -> InterviewGraphState:
+    return handle_drill_deeper(state)
+
+
 def build_interview_graph():
     """Build and compile the Interview Agent LangGraph."""
 
@@ -110,6 +117,10 @@ def build_interview_graph():
         "handle_follow_up",
         handle_follow_up_node,
     )
+    graph.add_node(
+        "handle_drill_deeper",
+        handle_drill_deeper_node,
+    )
 
     # Initial interview flow
     graph.add_edge(START, "load_skill_gap")
@@ -126,10 +137,12 @@ def build_interview_graph():
         {
             "next_question": "move_to_next_question",
             "follow_up": "handle_follow_up",
+            "drill_deeper": "handle_drill_deeper",
+            "skip_to_harder": "move_to_next_question",
         },
     )
 
-    # Both nodes already create the next InterviewTurn.
+    # All action nodes create the next InterviewTurn.
     # Therefore they go directly to awaiting the candidate's answer.
     graph.add_edge(
         "move_to_next_question",
@@ -137,6 +150,10 @@ def build_interview_graph():
     )
     graph.add_edge(
         "handle_follow_up",
+        "await_answer",
+    )
+    graph.add_edge(
+        "handle_drill_deeper",
         "await_answer",
     )
 

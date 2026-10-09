@@ -34,14 +34,19 @@ class Base(DeclarativeBase):
     pass
 
 
-from sqlalchemy import text
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def init_db() -> None:
     """Initialize database extensions and tables."""
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as exc:
+        logger.warning("Database initialization skipped or failed: %s", exc)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
