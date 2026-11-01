@@ -20,6 +20,8 @@ from app.core.schemas import (
     SkillGapReport,
     TurnStatus,
     SessionStatus,
+    Difficulty,
+    QuestionType,
 )
 
 
@@ -238,9 +240,10 @@ async def evaluate_turn(
             session_history=session.turns[:-1],
             job_description_text=job_description_text,
             candidate_resume_text=candidate_resume_text,
+            session_id=str(session.session_id),
             model=None,
             temperature=0.2,
-            timeout_seconds=25,
+            timeout_seconds=30,
         ),
         timeout=30,
     )
@@ -294,16 +297,23 @@ def route_after_evaluation(
     routing_hint = current_turn.evaluation.routing_hint
 
     allowed_routes = {
-        "next_question",
-        "follow_up",
-        "drill_deeper",
-        "skip_to_harder",
+    "next_question",
+    "follow_up",
+    "drill_deeper",
+    "skip_to_harder",
     }
 
     if routing_hint not in allowed_routes:
         raise ValueError(
             f"Unknown routing hint: {routing_hint}"
-        )
+    )
+
+    # Prevent unlimited drill-down on the same question.
+    if routing_hint == "drill_deeper":
+        drill_depth = current_turn.question.question_id.count("-deeper")
+
+        if drill_depth >= 2:
+            return "next_question"
 
     return routing_hint
 
@@ -387,7 +397,7 @@ def handle_follow_up(
                     f"{latest_turn.question.question_id}-followup"
                 ),
                 "question_text": follow_up_question,
-                "question_type": "follow_up",
+                "question_type": QuestionType.FOLLOW_UP,
             }
         ),
         status=TurnStatus.PENDING,
@@ -423,13 +433,16 @@ def handle_drill_deeper(
 
     current_difficulty = latest_turn.question.difficulty
 
+    if isinstance(current_difficulty, str):
+        current_difficulty = Difficulty(current_difficulty)
+
     difficulty_order = {
-        "easy": "medium",
-        "medium": "hard",
-        "hard": "hard",
+        Difficulty.EASY: Difficulty.MEDIUM,
+        Difficulty.MEDIUM: Difficulty.HARD,
+        Difficulty.HARD: Difficulty.HARD,
     }
 
-    next_difficulty = difficulty_order[current_difficulty.value]
+    next_difficulty = difficulty_order[current_difficulty]
 
     deeper_question = latest_turn.question.model_copy(
         update={

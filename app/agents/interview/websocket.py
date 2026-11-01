@@ -8,9 +8,11 @@ from app.agents.interview.nodes import (
     ask_question,
     await_answer,
     evaluate_turn,
+    handle_drill_deeper,
     handle_follow_up,
     move_to_next_question,
     route_after_evaluation,
+
 )
 from app.core.database import AsyncSessionLocal
 from app.core.models import SkillGapReportORM
@@ -45,7 +47,7 @@ async def interview_websocket(
                 db,
                 session_id=session_id,
             )
-            
+
             if session is None:
                 await websocket.send_json(
                     {
@@ -132,14 +134,27 @@ async def interview_websocket(
             # ---------------------------------------------------------
             # 4. Build the Interview Agent state.
             # ---------------------------------------------------------
+            config = session.config or {}
+
+            job_description_text = config.get("job_description_text")
+            candidate_resume_text = config.get("resume_text")
+
+            if not job_description_text or not candidate_resume_text:
+                await websocket.send_json({
+                "type": "error",
+                "message": "Interview session is missing resume or job description context.",
+                })
+                await websocket.close()
+                return
+
             state: InterviewGraphState = {
-                "session": session,
-                "skill_gap_report": skill_gap_report,
-                "job_description_text": "",
-                "candidate_resume_text": "",
-                "db": db,
-                "openai_client": None,
-                "answer_text": None,
+            "session": session,
+            "skill_gap_report": skill_gap_report,
+            "job_description_text": job_description_text,
+            "candidate_resume_text": candidate_resume_text,
+            "db": db,
+            "openai_client": None,
+            "answer_text": None,
             }
 
             # ---------------------------------------------------------
@@ -271,6 +286,12 @@ async def interview_websocket(
                 elif route == "follow_up":
                     state = handle_follow_up(state)
 
+                elif route == "drill_deeper":
+                    state = handle_drill_deeper(state)
+
+
+                elif route == "skip_to_harder":
+                    state = handle_drill_deeper(state)
                 else:
                     # Phase 3 explicitly handles next question and
                     # follow-up. Other architecture routes are not
@@ -279,7 +300,7 @@ async def interview_websocket(
                         {
                             "type": "error",
                             "message": (
-                                f"Unsupported routing hint for Phase 3: "
+                                f"Unsupported routing hint:"
                                 f"{route}"
                             ),
                         }
