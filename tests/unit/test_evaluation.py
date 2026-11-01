@@ -32,6 +32,7 @@ SCENARIO_MAP = {
 async def test_strong_technical_answer_scores_high_and_routes_forward():
     fake = make_fake_generate_structured(SCENARIO_MAP)
     result = await evaluate_answer(
+        session_id="test-session",
         turn=TURN_STRONG_TECHNICAL,
         skill_gap_report=SKILL_GAP_REPORT,
         session_history=[],
@@ -54,12 +55,14 @@ async def test_strong_technical_answer_scores_high_and_routes_forward():
 async def test_weak_behavioral_answer_scores_low_and_flags_star_gap():
     fake = make_fake_generate_structured(SCENARIO_MAP)
     result = await evaluate_answer(
+        session_id="test-session",
         turn=TURN_WEAK_BEHAVIORAL,
         skill_gap_report=SKILL_GAP_REPORT,
         session_history=[TURN_STRONG_TECHNICAL],  # already-evaluated turn 1, unattached eval ok for history-only use
         job_description_text=JOB_DESCRIPTION_TEXT,
         candidate_resume_text=CANDIDATE_RESUME_TEXT,
         _generate_structured=fake,
+
     )
 
     assert result.overall_score < 5.0
@@ -73,6 +76,7 @@ async def test_weak_behavioral_answer_scores_low_and_flags_star_gap():
 async def test_mediocre_situational_answer_scores_middling():
     fake = make_fake_generate_structured(SCENARIO_MAP)
     result = await evaluate_answer(
+        session_id="test-session",
         turn=TURN_MEDIOCRE_SITUATIONAL,
         skill_gap_report=SKILL_GAP_REPORT,
         session_history=[],
@@ -93,6 +97,7 @@ async def test_too_short_answer_raises_evaluation_error_without_calling_llm():
 
     with pytest.raises(EvaluationError) as exc_info:
         await evaluate_answer(
+            session_id="test-session",
             turn=TURN_TOO_SHORT,
             skill_gap_report=SKILL_GAP_REPORT,
             session_history=[],
@@ -108,6 +113,7 @@ async def test_missing_answer_text_raises_evaluation_error():
     empty_turn = TURN_TOO_SHORT.model_copy(update={"answer_text": "   "})
     with pytest.raises(EvaluationError) as exc_info:
         await evaluate_answer(
+            session_id="test-session",
             turn=empty_turn,
             skill_gap_report=SKILL_GAP_REPORT,
             session_history=[],
@@ -125,6 +131,7 @@ async def test_malformed_llm_output_raises_evaluation_error():
 
     with pytest.raises(EvaluationError) as exc_info:
         await evaluate_answer(
+            session_id="test-session",
             turn=TURN_STRONG_TECHNICAL,
             skill_gap_report=SKILL_GAP_REPORT,
             session_history=[],
@@ -142,6 +149,7 @@ async def test_generate_final_report_aggregates_all_evaluated_turns():
     evaluated = []
     for turn in (TURN_STRONG_TECHNICAL, TURN_WEAK_BEHAVIORAL, TURN_MEDIOCRE_SITUATIONAL):
         evaluation = await evaluate_answer(
+            session_id="test-session",
             turn=turn,
             skill_gap_report=SKILL_GAP_REPORT,
             session_history=evaluated,

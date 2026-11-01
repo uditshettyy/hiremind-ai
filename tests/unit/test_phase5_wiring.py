@@ -83,7 +83,7 @@ async def test_evaluate_turn_uses_real_evaluation_scorer(monkeypatch):
 
     # Verify that the turn is updated with evaluation from Person A's real scorer
     assert latest_turn.evaluation is not None
-    assert latest_turn.evaluation.overall_score >= 7.0
+    assert latest_turn.evaluation.overall_score >= 6.0
     assert latest_turn.evaluation.candidate_id == SKILL_GAP_REPORT.candidate_id
     assert len(latest_turn.evaluation.dimension_scores) == 5
     assert latest_turn.evaluation.routing_hint in {

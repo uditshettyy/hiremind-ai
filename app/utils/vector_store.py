@@ -1,40 +1,48 @@
 """
 pgvector / embedding helpers (app.utils.vector_store), per ARCHITECTURE.md §3.1.
 
-`embed_texts` is the `embed_fn` that service.py's `_chunk_and_embed` calls —
-wire it in via router.py once ready:
-
-    from app.utils.vector_store import embed_texts
-
-    await analyze_skill_gap(
-        ...,
-        db_session=db,               # from Depends(get_db)
-        embed_fn=embed_texts,
-    )
+`embed_texts` is the `embed_fn` that service.py's `_chunk_and_embed` calls.
 """
+
 from __future__ import annotations
 
+import asyncio
 from functools import lru_cache
 from typing import Sequence
 
-from mistralai.client import Mistral  # SDK v2 import path
+from google import genai
+from google.genai import types
 
 from app.config import get_settings
 
 
 @lru_cache
-def _get_mistral_client() -> Mistral:
-    """One client per process — Mistral() is not free to construct."""
-    return Mistral(api_key=get_settings().mistral_api_key)
+def _get_gemini_client() -> genai.Client:
+    """One Gemini client per process."""
+    settings = get_settings()
+    return genai.Client(api_key=settings.gemini_api_key)
 
 
 async def embed_texts(texts: Sequence[str]) -> list[list[float]]:
-    """Batch-embed strings via Mistral AI embeddings. Isolated for easy mocking in tests."""
+    """Batch-embed strings using Gemini Embedding 001.
+
+    PostgreSQL expects vector(1536), so embeddings are explicitly
+    requested at 1536 dimensions.
+    """
     if not texts:
         return []
-    client = _get_mistral_client()
-    resp = await client.embeddings.create_async(
-        model="mistral-embed",
-        inputs=list(texts),
-    )
-    return [d.embedding for d in resp.data]
+
+    client = _get_gemini_client()
+
+    def _embed() -> list[list[float]]:
+        response = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=list(texts),
+            config=types.EmbedContentConfig(
+                output_dimensionality=1536,
+            ),
+        )
+
+        return [embedding.values for embedding in response.embeddings]
+
+    return await asyncio.to_thread(_embed)

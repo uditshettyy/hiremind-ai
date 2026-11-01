@@ -42,6 +42,7 @@ async def evaluate_answer(
     session_history: list[InterviewTurn],
     job_description_text: str,
     candidate_resume_text: str,
+    session_id: str,
     model: str | None = None,
     temperature: float = 0.2,
     timeout_seconds: int = 30,
@@ -173,7 +174,7 @@ async def evaluate_answer(
 
     return AnswerEvaluation(
         evaluation_id=str(uuid.uuid4()),
-        session_id=_infer_session_id(turn, session_history),
+        session_id=session_id,
         turn_number=turn.turn_number,
         candidate_id=skill_gap_report.candidate_id,
         evaluated_at=datetime.now(timezone.utc),
@@ -223,11 +224,4 @@ def _decide_routing_hint(
     if weighted_score >= 8.5:
         return "skip_to_harder"
     return "next_question"
-
-
-def _infer_session_id(turn: InterviewTurn, session_history: list[InterviewTurn]) -> str:
-    """session_id isn't on InterviewTurn itself — callers (the router/service
-    layer) should prefer passing it explicitly via context. As a fallback for
-    direct evaluate_answer() calls, this synthesizes a stable placeholder."""
-    return "unknown-session"
 

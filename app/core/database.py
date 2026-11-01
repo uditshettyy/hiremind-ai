@@ -1,7 +1,7 @@
 """SQLAlchemy engine/session, per ARCHITECTURE.md §4 (app/core/database.py)."""
 import os
 from typing import AsyncGenerator
-
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,

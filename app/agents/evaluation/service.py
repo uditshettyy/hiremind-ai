@@ -43,13 +43,9 @@ async def evaluate_and_persist(
     timeout_seconds: int = 30,
     _generate_structured=None,
 ) -> AnswerEvaluation:
-    """Score an answer, persist the result, and return it.
-
-    Note: `evaluate_answer()` itself has no `db` or `session_id` parameter —
-    that's the exact cross-module contract Person B's Interview Agent calls
-    directly (ARCHITECTURE.md §5.1). This service function is the *router's*
-    entry point, which additionally persists to Postgres; it is not what
-    Person B calls.
+    """Note: `evaluate_answer()` is the direct cross-module scorer called by
+Person B's Interview Agent. The service layer additionally persists the
+evaluation to Postgres.
     """
     kwargs = {
         "turn": turn,
@@ -57,6 +53,7 @@ async def evaluate_and_persist(
         "session_history": session_history,
         "job_description_text": job_description_text,
         "candidate_resume_text": candidate_resume_text,
+        "session_id": session_id,
         "model": model,
         "temperature": temperature,
         "timeout_seconds": timeout_seconds,
@@ -65,9 +62,7 @@ async def evaluate_and_persist(
         kwargs["_generate_structured"] = _generate_structured
 
     evaluation = await evaluate_answer(**kwargs)
-    # AnswerEvaluation.session_id comes back as "unknown-session" from the pure
-    # scorer (see scorer.py's _infer_session_id note) — the service layer knows
-    # the real session_id from its own request context, so patch it here.
+    # The scorer now receives the real session_id explicitly.
     evaluation = evaluation.model_copy(update={"session_id": session_id})
 
     if db is not None and AnswerEvaluationORM is not None:
@@ -110,6 +105,7 @@ async def generate_and_persist_report(
         "candidate_id": candidate_id,
         "job_id": job_id,
         "turns": turns,
+        "session_id": session_id,
         "skill_gap_report": skill_gap_report,
         "total_session_duration_seconds": total_session_duration_seconds,
     }
