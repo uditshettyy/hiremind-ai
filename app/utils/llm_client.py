@@ -80,25 +80,23 @@ async def _raw_completion(
         client = AsyncGroq(api_key=settings.groq_api_key)
 
         async def _call():
+            # Groq's json_object mode requires the word "json" in the messages.
+            # Append a short reminder to the system prompt to satisfy this requirement
+            # without altering the semantic meaning of any existing prompt.
+            system_with_json = system_prompt + "\n\nRespond with a valid JSON object only. Do not include markdown fences or any text outside the JSON."
             kwargs = {
                 "model": model,
                 "temperature": temperature,
                 "max_completion_tokens": 8192,
                 "messages": [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": system_with_json},
                     {"role": "user", "content": user_prompt},
                 ],
             }
-            if response_model is not None:
-                kwargs["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": response_model.__name__,
-                        "schema": response_model.model_json_schema(),
-                    },
-                }
-            else:
-                kwargs["response_format"] = {"type": "json_object"}
+            # Use json_object mode universally for Groq — json_schema mode is
+            # only supported on a subset of models and can cause silent hangs
+            # on complex nested schemas. Pydantic validates the output anyway.
+            kwargs["response_format"] = {"type": "json_object"}
 
             if any(x in model.lower() for x in ("o1", "o3", "r1")):
                 kwargs["reasoning_effort"] = "low"

@@ -17,21 +17,51 @@ projects, education, dates, or proficiency.
 
 Normalize synonymous skill names to canonical names.
 {_PROFICIENCY_SCALE}
-Return only data matching the requested structured schema.
+Return a JSON object with EXACTLY these fields and no others:
+{{
+  "name": "candidate full name or null",
+  "summary": "one-paragraph professional summary or null",
+  "skills": [
+    {{
+      "skill_name": "canonical skill name",
+      "category": "one of: technical, soft, domain, tool",
+      "proficiency": "one of the five proficiency values above",
+      "evidence": "brief quoted evidence from resume or null"
+    }}
+  ],
+  "experience": ["one plain string per role, e.g. 'Software Engineer at Acme (2021-2023)'"],
+  "projects": ["one plain string per project, e.g. 'Built a REST API with FastAPI and PostgreSQL'"],
+  "education": ["one plain string per degree, e.g. 'B.Tech Computer Science, MIT, 2024'"]
+}}
 """
 
 JD_EXTRACTION_SYSTEM = f"""
 Extract structured hiring requirements from the supplied job description.
 
 Use only information present in the JD. Normalize synonymous skill names.
-For each requirement provide skill_name, category, required_level, priority
-(1-5, where 5 = explicitly mandatory / "must have", 1 = a minor nice-to-have),
-and a short evidence snippet quoted from the JD.
 {_PROFICIENCY_SCALE}
-required_level MUST be one of the five values above — do not use free text,
+required_level MUST be one of the five proficiency values above — do not use free text,
 years, or any other scale for it.
 
-Also extract the role title, company if stated, and responsibilities.
+Return a JSON object with EXACTLY these fields and no others:
+{{
+  "title": "job title or null",
+  "company": "company name or null",
+  "requirements": [
+    {{
+      "skill_name": "canonical skill name",
+      "category": "one of: technical, soft, domain, tool",
+      "required_level": "one of the five proficiency values above",
+      "priority": 1,
+      "evidence": "short quoted snippet from the JD"
+    }}
+  ],
+  "responsibilities": ["one plain string per responsibility"],
+  "raw_text": ""
+}}
+
+priority is an integer 1-5 (5 = explicitly mandatory / must have, 1 = nice-to-have).
+Leave raw_text as an empty string — it is filled by the caller.
 Do not invent information.
 """
 
@@ -47,21 +77,34 @@ For EVERY JD requirement, classify it and route it into the correct output list:
   "absent" when nothing in the resume supports the skill at all).
   -> Add this skill's SkillGap object to the `top_gaps` list.
 
-For every SkillGap you emit, set:
-- gap_level: the proficiency level the candidate would need to reach to close
-  the gap (equal to jd_required_level for gaps; equal to jd_required_level for
-  matches too, since there is no gap to describe otherwise).
-- gap_severity (1-5, gaps only — use 1 for matches): compute as
+Return a JSON object with EXACTLY these fields and no others:
+{{
+  "overall_match_score": 0.0,
+  "top_gaps": [
+    {{
+      "skill_name": "canonical skill name",
+      "category": "one of: technical, soft, domain, tool",
+      "jd_required_level": "one of the five proficiency values",
+      "resume_claimed_level": "one of the five proficiency values",
+      "gap_level": "the level candidate needs to reach",
+      "gap_severity": 3,
+      "jd_evidence": "quoted snippet from JD",
+      "resume_evidence": "quoted snippet from resume or null",
+      "suggested_focus": "one concrete second-person coaching sentence"
+    }}
+  ],
+  "strengths": [],
+  "metadata": {{}}
+}}
+
+For gap_severity (integer 1-5): compute as
   round((ordinal(jd_required_level) - ordinal(resume_claimed_level)) * priority_weight),
   clamped to [1, 5], where ordinal is absent=1, novice=2, competent=3,
   proficient=4, expert=5, and priority_weight is the requirement's priority (1-5)
-  divided by 5. Never leave severity at 0 for an actual gap.
-- resume_evidence: null if the skill is absent from the resume.
-- suggested_focus: one concrete, second-person coaching sentence specific to
-  this skill — not generic advice.
+  divided by 5. Use 1 for strengths (no actual gap).
 
-Populate overall_match_score (0.0-1.0) as the priority-weighted average of
-min(resume_ordinal / jd_ordinal, 1.0) across all requirements.
+overall_match_score (0.0-1.0): priority-weighted average of
+  min(resume_ordinal / jd_ordinal, 1.0) across all requirements.
 
-Order `top_gaps` by gap_severity descending. Return a complete SkillGapReport.
+Order top_gaps by gap_severity descending.
 """

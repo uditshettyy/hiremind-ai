@@ -11,7 +11,7 @@ from enum import Enum
 from typing import List, Optional
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ProficiencyLevel(str, Enum):
@@ -33,6 +33,15 @@ PROFICIENCY_ORDINAL: dict[ProficiencyLevel, int] = {
     ProficiencyLevel.EXPERT: 5,
 }
 
+_VALID_PROFICIENCY = {e.value for e in ProficiencyLevel}
+
+
+def _coerce_proficiency(v: object) -> object:
+    """Coerce LLM quirks like 'none', 'n/a', '' → None for Optional fields."""
+    if isinstance(v, str) and v.lower() not in _VALID_PROFICIENCY:
+        return None
+    return v
+
 
 class SkillGap(BaseModel):
     """A single skill gap identified between resume and JD."""
@@ -40,8 +49,8 @@ class SkillGap(BaseModel):
     category: str = Field(..., description="e.g., 'technical', 'soft', 'domain', 'tool'")
     jd_required_level: ProficiencyLevel
     resume_claimed_level: ProficiencyLevel
-    gap_level: ProficiencyLevel = Field(
-        ..., description="The delta: what the candidate needs to reach"
+    gap_level: Optional[ProficiencyLevel] = Field(
+        None, description="The delta: what the candidate needs to reach; null for matched strengths"
     )
     gap_severity: int = Field(
         ..., ge=1, le=5,
@@ -51,9 +60,25 @@ class SkillGap(BaseModel):
     resume_evidence: Optional[str] = Field(
         None, description="Quoted evidence from resume, or null if absent"
     )
-    suggested_focus: str = Field(
-        ..., description="1-sentence coaching hint for the candidate"
+    suggested_focus: Optional[str] = Field(
+        None, description="1-sentence coaching hint for the candidate; null for matched strengths"
     )
+
+    @field_validator("gap_level", mode="before")
+    @classmethod
+    def coerce_gap_level(cls, v: object) -> object:
+        """Convert LLM quirks like 'none', 'n/a' → None (field is Optional)."""
+        if isinstance(v, str) and v.lower() not in _VALID_PROFICIENCY:
+            return None
+        return v
+
+    @field_validator("jd_required_level", "resume_claimed_level", mode="before")
+    @classmethod
+    def coerce_required_proficiency(cls, v: object) -> object:
+        """Convert invalid strings → 'absent' so required enum fields don't crash."""
+        if isinstance(v, str) and v.lower() not in _VALID_PROFICIENCY:
+            return "absent"
+        return v
 
 
 class SkillGapReport(BaseModel):
