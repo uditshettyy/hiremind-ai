@@ -76,8 +76,12 @@ async def _chunk_and_embed(
             )
         await db_session.flush()
     except Exception as exc:
-        logger.error("Failed to chunk and embed document (source_type=%s, source_id=%s): %s", source_type, source_id, exc)
-        raise RuntimeError(f"Database error during chunk embedding: {exc}") from exc
+        # Non-fatal: gap analysis and interview work without vector-store embeddings.
+        # RAG-based question enrichment is degraded but the core flow continues.
+        logger.warning(
+            "Chunk/embed skipped (source_type=%s, source_id=%s): %s",
+            source_type, source_id, exc,
+        )
 
 
 async def _persist_intake_entities(
@@ -145,8 +149,9 @@ async def _persist_intake_entities(
 
         await db_session.flush()
     except Exception as exc:
-        logger.error("Failed to persist intake entities to DB: %s", exc)
-        raise RuntimeError(f"Database error during intake entity persistence: {exc}") from exc
+        # Non-fatal: DB persistence for analytics/RAG is optional.
+        # The SkillGapReport is still returned to the caller.
+        logger.warning("Intake entity persistence skipped: %s", exc)
 
 
 async def analyze_skill_gap(
@@ -205,9 +210,8 @@ async def analyze_skill_gap(
         try:
             await db_session.commit()
         except Exception as exc:
-            logger.error("Failed to commit intake DB transaction: %s", exc)
+            logger.warning("DB commit skipped after intake: %s", exc)
             if hasattr(db_session, "rollback"):
                 await db_session.rollback()
-            raise RuntimeError(f"Database transaction commit failed: {exc}") from exc
 
     return report

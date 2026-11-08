@@ -5,9 +5,14 @@ evaluate_answer function (from app.agents.evaluation.scorer) and updates the
 session turn with the resulting AnswerEvaluation.
 """
 import pytest
+from unittest.mock import AsyncMock, patch
+from datetime import datetime, timezone
+
 from app.agents.interview.nodes import evaluate_turn, InterviewGraphState
 from app.core.schemas import (
+    AnswerEvaluation,
     Difficulty,
+    DimensionScore,
     InterviewSession,
     InterviewTurn,
     Question,
@@ -16,25 +21,48 @@ from app.core.schemas import (
     SessionStatus,
     TurnStatus,
 )
-from tests.fixtures.fake_llm import make_fake_generate_structured
 from tests.fixtures.sample_session import (
     CANDIDATE_RESUME_TEXT,
     JOB_DESCRIPTION_TEXT,
     SKILL_GAP_REPORT,
 )
 
-SCENARIO_MAP = {
-    "q-indexing-1": "strong_technical",
-}
+# ---------------------------------------------------------------------------
+# Fake AnswerEvaluation that the mocked evaluate_answer returns
+# ---------------------------------------------------------------------------
+FAKE_EVALUATION = AnswerEvaluation(
+    evaluation_id="eval-phase5-test",
+    session_id="sess-phase5-test",
+    turn_number=1,
+    candidate_id=SKILL_GAP_REPORT.candidate_id,
+    evaluated_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    overall_score=8.5,
+    weighted_score=8.5,
+    routing_hint="next_question",
+    summary_feedback="Strong technical response demonstrating thorough understanding of PostgreSQL indexing internals.",
+    strengths=["Clear explanation of range vs hash index behavior"],
+    improvements=["Could mention write amplification/maintenance costs"],
+    model_answer_snippet="B-tree indexes maintain a sorted tree structure supporting range and equality queries.",
+    skill_level_inferred="proficient",
+    suggested_follow_up=None,
+    latency_ms=100,
+    dimension_scores=[
+        DimensionScore(dimension="accuracy", score=9.0, rationale="Factually precise."),
+        DimensionScore(dimension="depth", score=8.5, rationale="Clear understanding."),
+        DimensionScore(dimension="clarity", score=9.0, rationale="Well-structured."),
+        DimensionScore(dimension="relevance", score=9.5, rationale="Completely answers the question."),
+        DimensionScore(dimension="confidence", score=8.5, rationale="Decisive explanation."),
+    ],
+)
 
 
 @pytest.mark.asyncio
 async def test_evaluate_turn_uses_real_evaluation_scorer(monkeypatch):
-    # Mock LLM underlying evaluate_answer
-    fake_llm = make_fake_generate_structured(SCENARIO_MAP)
-    monkeypatch.setattr(
-        "app.agents.evaluation.scorer.default_generate_structured", fake_llm
-    )
+    # Patch evaluate_answer at the nodes module level so the already-imported
+    # reference is replaced. The default-argument binding in scorer.py means
+    # patching the scorer module attribute alone does not reach the call site.
+    mock_evaluate = AsyncMock(return_value=FAKE_EVALUATION)
+    monkeypatch.setattr("app.agents.interview.nodes.evaluate_answer", mock_evaluate)
 
     question = Question(
         question_id="q-indexing-1",

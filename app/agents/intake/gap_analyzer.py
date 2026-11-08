@@ -62,6 +62,7 @@ STRUCTURED JD:
         system_prompt=GAP_ANALYSIS_SYSTEM,
         user_prompt=user_prompt,
         response_model=RawSkillGapAnalysis,
+        timeout_seconds=90,  # large prompt: resume + full JD JSON can be 2-3k tokens
     )
 
     raw = (

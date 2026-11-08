@@ -138,11 +138,14 @@ async def evaluate_answer(
         strengths = raw.get("strengths", [])[:5]
         improvements = raw.get("improvements", [])[:5]
         model_answer_snippet = raw.get("model_answer_snippet")
-        skill_level_inferred = (
-            ProficiencyLevel(raw["skill_level_inferred"])
-            if raw.get("skill_level_inferred")
-            else None
-        )
+        raw_skill_level = raw.get("skill_level_inferred")
+        if isinstance(raw_skill_level, str):
+            raw_skill_level = raw_skill_level.strip().lower()
+            if raw_skill_level not in ProficiencyLevel._value2member_map_:
+                raw_skill_level = None
+        else:
+            raw_skill_level = None
+        skill_level_inferred = ProficiencyLevel(raw_skill_level) if raw_skill_level else None
         suggested_follow_up = raw.get("suggested_follow_up") or None
     except (KeyError, ValueError, TypeError) as exc:
         raise EvaluationError(
