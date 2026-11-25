@@ -2,7 +2,7 @@
 
 An AI interview-prep platform. Upload your resume, paste a job description, and HireMind finds your skill gaps, runs a mock technical interview built around them (voice or text), and gives you a scored report with a study plan.
 
-> **Live Demo:** `https://hiremind-ai-weld.vercel.app`
+> **Live Demo:** `https://hiremind-ai-theta.vercel.app/`
 
 ## Features
 
